@@ -1,4 +1,15 @@
+;; TODO
+;;  EVIL, modularize way to override EVIL map
+;;  Write script to automatically add company-clang-arguments or create .dir-locals.el
+;;  Figure out how to set up c-headers, clang doesn't seem to have the source
+;;   https://tuhdo.github.io/c-ide.html
+;;    Using generated database from GNU Global
+;;  Disable buffers when opening a file
+;;  Projectile -- figure out why it can't go to corresponding h or cpp file
+;;   Projectile - also automatically create .projectile file in base folder
+;;  FunctionArgs can't find definition
 (require 'package)
+;;; Code:
 (add-to-list 'package-archives
 	     '("melpa" . "http://melpa.milkbox.net/packages/") t)
 (package-initialize)
@@ -10,6 +21,7 @@
 (defconst demo-packages
   '(anzu
     company
+    company-c-headers
     duplicate-thing
     ggtags
     helm
@@ -27,7 +39,14 @@
     projectile
     volatile-highlights
     undo-tree
-    zygospore))
+    zygospore
+    evil
+    sr-speedbar
+    evil-search-highlight-persist
+    solarized-theme
+    flycheck
+    flycheck-pos-tip
+    ))
 
 (defun install-packages ()
   "Install all required packages."
@@ -51,14 +70,20 @@
 ;; (require 'setup-ggtags)
 (require 'setup-cedet)
 (require 'setup-editing)
+(require 'setup-custom-keys)
 
 (windmove-default-keybindings)
+
+;; set the theme to solarized
+(load-theme 'solarized-dark t)
 
 ;; function-args
 (require 'function-args)
 (fa-config-default)
 (define-key c-mode-map  [(tab)] 'moo-complete)
 (define-key c++-mode-map  [(tab)] 'moo-complete)
+(define-key c-mode-map (kbd "M-o")  'fa-show)
+(define-key c++-mode-map (kbd "M-o")  'fa-show)
 
 ;; company
 (require 'company)
@@ -66,6 +91,7 @@
 (delete 'company-semantic company-backends)
 (define-key c-mode-map  [(control tab)] 'company-complete)
 (define-key c++-mode-map  [(control tab)] 'company-complete)
+(setq company-idle-delay 0)
 
 ;; company-c-headers
 (add-to-list 'company-backends 'company-c-headers)
@@ -100,7 +126,7 @@
 (setq-default indent-tabs-mode nil)
 
 ;; set appearance of a tab that is represented by 4 spaces
-(setq-default tab-width 4)
+(setq-default tab-width 3)
 
 ;; Compilation
 (global-set-key (kbd "<f5>") (lambda ()
@@ -143,10 +169,89 @@
 (show-smartparens-global-mode +1)
 (smartparens-global-mode 1)
 
-;; Package: projejctile
+;; Package: projectile
 (require 'projectile)
 (projectile-global-mode)
 (setq projectile-enable-caching t)
 
 ;; Package zygospore
 (global-set-key (kbd "C-x 1") 'zygospore-toggle-delete-other-windows)
+
+;; Package: sr-speedbar
+(require 'sr-speedbar)
+
+;; Package: EVIL
+(setq evil-want-C-u-scroll t)
+(require 'evil)
+(evil-mode 1)
+;;  Override "evil-repeat" with gtags
+(define-key evil-normal-state-map (kbd "M-.") 'helm-gtags-dwim)
+;;  Ensure that j and k will move with the visual line
+(define-key evil-normal-state-map (kbd "j") 'evil-next-visual-line)
+(define-key evil-normal-state-map (kbd "k") 'evil-previous-visual-line)
+;;  Scroll smoothly at boundaries
+(setq scroll-margin 5
+   scroll-conservatively 9999
+   scroll-step 1)
+;; change mode-line color by evil state
+(lexical-let ((default-color (cons (face-background 'mode-line)
+                                   (face-foreground 'mode-line))))
+   (add-hook 'post-command-hook
+      (lambda ()
+         (let ((color (cond ((minibufferp) default-color)
+           ((evil-insert-state-p) '("#e80000" . "#ffffff"))
+           ((evil-visual-state-p) '("#ffa200" . "#ffffff"))
+           ((evil-emacs-state-p) '("#444488" . "#ffffff"))
+           ((buffer-modified-p)  '("#006fa0" . "#ffffff"))
+           (t default-color))))
+        (set-face-background 'mode-line (car color))
+        (set-face-foreground 'mode-line (cdr color))
+        ;; change cursor by state
+        (setq evil-emacs-state-cursor '("red" box))
+        (setq evil-normal-state-cursor '("green" box))
+        (setq evil-visual-state-cursor '("orange" box))
+        (setq evil-insert-state-cursor '("red" bar))
+        (setq evil-replace-state-cursor '("red" bar))
+        (setq evil-operator-state-cursor '("red" hollow))
+        )
+      )
+   )
+)
+(require 'evil-search-highlight-persist)
+(global-evil-search-highlight-persist t)
+
+;; Specify that any company-clang-arguments are safe to remove confirmation
+;;  on .dir-locals.el
+;;   http://stackoverflow.com/questions/19806176/in-emacs-how-do-i-make-a-local-variable-safe-to-be-set-in-a-file-for-all-possibl
+(put 'company-clang-arguments 'safe-local-variable (lambda (xx) t))
+
+;; Don't indent braces
+;;  http://blog.binchen.org/posts/ccjava-code-indentation-in-emacs.html
+(defun fix-c-indent-offset-according-to-syntax-context (key val)
+;; remove the old element
+(setq c-offsets-alist (delq (assoc key c-offsets-alist) c-offsets-alist))
+;; new value
+(add-to-list 'c-offsets-alist '(key . val)))
+
+(add-hook 'c-mode-common-hook
+          (lambda ()
+            (when (derived-mode-p 'c-mode 'c++-mode 'java-mode)
+              ;; indent
+              (fix-c-indent-offset-according-to-syntax-context 'substatement 0)
+              (fix-c-indent-offset-according-to-syntax-context 'func-decl-cont 0))))
+
+;; flycheck
+(add-hook 'after-init-hook #'global-flycheck-mode)
+(global-flycheck-mode t)
+
+;; flycheck errors on a tooltip (doesnt work on console)
+;;  TODO fix this
+
+(setq make-backup-files nil)
+
+(setq save-place-file "~/.emacs.d/saveplace")
+(setq-default save-place t)
+(require 'saveplace)
+
+(provide 'init)
+;;; init.el ends here
