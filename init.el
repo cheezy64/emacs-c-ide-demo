@@ -213,6 +213,8 @@
         (setq evil-insert-state-cursor '("red" bar))
         (setq evil-replace-state-cursor '("red" bar))
         (setq evil-operator-state-cursor '("red" hollow))
+        ;; treat underscores as word chars
+        (modify-syntax-entry ?_ "w")
         )
       )
    )
